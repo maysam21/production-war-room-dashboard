@@ -145,111 +145,130 @@ if uploaded_file is not None:
         use_container_width=True
     )
 
-    # =========================================================
-    # 🏭 Vendor Capacity Planning (Month-wise + SKU Mapping)
-    # =========================================================
+  # =========================================================
+# 🏭 Vendor Capacity Planning (Improved UI + Allocation %)
+# =========================================================
+
+st.markdown("----")
+st.header("🏭 Vendor Capacity Planning")
+
+selected_month = st.selectbox("Select Month", months)
+
+st.markdown("### 🧩 Vendor Setup")
+
+num_vendors = st.number_input(
+    "Number of Vendors",
+    min_value=1,
+    max_value=5,
+    value=1
+)
+
+vendor_data = []
+assignment_data = []
+
+for i in range(num_vendors):
+
     st.markdown("----")
-    st.header("🏭 Vendor Capacity Planning (Month-wise)")
 
-    selected_month = st.selectbox("Select Month", months)
+    col1, col2, col3, col4 = st.columns([2,2,2,2])
 
-    st.subheader("Add Vendors")
+    name = col1.text_input("Vendor Name", key=f"vname_{i}")
 
-    num_vendors = st.number_input(
-        "Number of Vendors",
-        min_value=1,
-        max_value=5,
-        value=1
+    category = col2.selectbox(
+        "Category",
+        sorted(df_q["Category"].unique()),
+        key=f"vcat_{i}"
     )
 
-    vendor_data = []
-    assignment_data = []
+    capacity = col3.number_input(
+        f"{selected_month} Capacity",
+        min_value=0,
+        value=0,
+        key=f"vcap_{i}"
+    )
 
-    for i in range(num_vendors):
+    allocation_pct = col4.number_input(
+        "Allocation %",
+        min_value=0,
+        max_value=100,
+        value=100,
+        key=f"valloc_{i}"
+    )
 
-        col1, col2, col3 = st.columns(3)
+    if name:
 
-        name = col1.text_input("Vendor Name", key=f"vname_{i}")
-        category = col2.selectbox(
-            "Category",
-            sorted(df_q["Category"].unique()),
-            key=f"vcat_{i}"
-        )
-        capacity = col3.number_input(
-            f"{selected_month} Capacity",
-            min_value=0,
-            value=0,
-            key=f"vcap_{i}"
-        )
-
-        if name:
-
-            vendor_data.append({
-                "Vendor": name,
-                "Category": category,
-                "Capacity": capacity
-            })
-
-            with st.expander(f"Map SKUs for {name} ({category})"):
-
-                sku_list = df_q[df_q["Category"] == category]["Model"].tolist()
-
-                selected_skus = st.multiselect(
-                    "Select SKUs",
-                    sku_list,
-                    key=f"sku_map_{i}"
-                )
-
-                for sku in selected_skus:
-
-                    plan_value = df_q[
-                        df_q["Model"] == sku
-                    ][selected_month].values[0]
-
-                    assignment_data.append({
-                        "Vendor": name,
-                        "Model": sku,
-                        "Plan": plan_value
-                    })
-
-    vendor_df = pd.DataFrame(vendor_data)
-    assignment_df = pd.DataFrame(assignment_data)
-
-    st.markdown("----")
-    st.subheader("Vendor Utilization Summary")
-
-    results = []
-
-    for _, row in vendor_df.iterrows():
-
-        vendor = row["Vendor"]
-        capacity = row["Capacity"]
-
-        vendor_plan = assignment_df[
-            assignment_df["Vendor"] == vendor
-        ]["Plan"].sum()
-
-        utilization = (vendor_plan / capacity) * 100 if capacity > 0 else 0
-        gap = capacity - vendor_plan
-
-        if utilization > 100:
-            status = "🔴 Overloaded"
-        elif utilization >= 85:
-            status = "🟡 Tight"
-        else:
-            status = "🟢 Comfortable"
-
-        results.append({
-            "Vendor": vendor,
-            "Assigned Plan": int(vendor_plan),
-            "Capacity": int(capacity),
-            "Utilization %": round(utilization, 1),
-            "Gap": int(gap),
-            "Status": status
+        vendor_data.append({
+            "Vendor": name,
+            "Category": category,
+            "Capacity": capacity,
+            "Allocation %": allocation_pct
         })
 
-    result_df = pd.DataFrame(results)
-    st.dataframe(result_df, use_container_width=True)
+        # Compact SKU Mapping
+        with st.expander(f"Map SKUs for {name}"):
 
-else:
-    st.info("Upload Excel file to start.")
+            sku_list = df_q[df_q["Category"] == category]["Model"].tolist()
+
+            selected_skus = st.multiselect(
+                "Select SKUs",
+                sku_list,
+                key=f"sku_map_{i}"
+            )
+
+            for sku in selected_skus:
+
+                plan_value = df_q[
+                    df_q["Model"] == sku
+                ][selected_month].values[0]
+
+                assignment_data.append({
+                    "Vendor": name,
+                    "Model": sku,
+                    "Base Plan": plan_value
+                })
+
+vendor_df = pd.DataFrame(vendor_data)
+assignment_df = pd.DataFrame(assignment_data)
+
+st.markdown("----")
+st.subheader("📊 Vendor Utilization Summary")
+
+results = []
+
+for _, row in vendor_df.iterrows():
+
+    vendor = row["Vendor"]
+    capacity = row["Capacity"]
+    allocation_pct = row["Allocation %"]
+
+    vendor_plan = assignment_df[
+        assignment_df["Vendor"] == vendor
+    ]["Base Plan"].sum()
+
+    # Apply allocation %
+    allocated_plan = (vendor_plan * allocation_pct) / 100
+
+    utilization = (allocated_plan / capacity) * 100 if capacity > 0 else 0
+    gap = capacity - allocated_plan
+
+    if utilization > 100:
+        status = "🔴 Overloaded"
+    elif utilization >= 85:
+        status = "🟡 Tight"
+    else:
+        status = "🟢 Comfortable"
+
+    results.append({
+        "Vendor": vendor,
+        "Mapped Plan": int(vendor_plan),
+        "Allocation %": allocation_pct,
+        "Allocated Plan": int(allocated_plan),
+        "Capacity": int(capacity),
+        "Utilization %": round(utilization, 1),
+        "Gap": int(gap),
+        "Status": status
+    })
+
+result_df = pd.DataFrame(results)
+
+st.dataframe(result_df, use_container_width=True)
