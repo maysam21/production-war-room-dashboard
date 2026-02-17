@@ -11,9 +11,9 @@ uploaded_file = st.sidebar.file_uploader(
     type=["xlsx"]
 )
 
-# -----------------------------
-# Global Month Map (FIXED)
-# -----------------------------
+# =========================================================
+# 🔹 Global Month Map
+# =========================================================
 month_map = {
     "OND": ["Oct", "Nov", "Dec"],
     "JFM": ["Jan", "Feb", "Mar"],
@@ -89,22 +89,20 @@ if uploaded_file is not None:
     # =========================================================
     # 🔹 Quarter Selection
     # =========================================================
-
     selected_quarter = st.sidebar.selectbox(
         "Select Quarter",
         list(quarter_data.keys())
     )
 
     df_q = quarter_data[selected_quarter].copy()
-
     months = month_map.get(selected_quarter, [])
+
     if not months:
         st.stop()
 
     # =========================================================
     # 🔹 Production Plan Section
     # =========================================================
-
     st.header(f"📊 {selected_quarter} Production Plan")
 
     total_quarter = df_q[selected_quarter].sum()
@@ -142,105 +140,104 @@ if uploaded_file is not None:
 
     st.divider()
 
-    # SKU Table
     st.subheader("📦 SKU-wise Production Plan")
     st.dataframe(
         df_q.sort_values(by=selected_quarter, ascending=False),
         use_container_width=True
     )
 
-   # =========================================================
-# 🏭 Advanced Month-wise Vendor Capacity Planning
-# =========================================================
+    # =========================================================
+    # 🔹 Vendor Capacity Planning (Month-wise + Allocation)
+    # =========================================================
+    st.markdown("----")
+    st.header("🏭 Vendor Capacity Planning (Month-wise)")
 
-st.markdown("----")
-st.header("🏭 Vendor Capacity Planning (Month-wise)")
+    selected_month = st.selectbox("Select Month", months)
 
-selected_month = st.selectbox("Select Month", months)
+    st.subheader("Add Vendors")
 
-st.subheader("Add Vendors")
-
-num_vendors = st.number_input(
-    "Number of Vendors",
-    min_value=1,
-    max_value=5,
-    value=1
-)
-
-vendor_data = []
-
-for i in range(num_vendors):
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    name = col1.text_input("Vendor Name", key=f"vname_{i}")
-    category = col2.selectbox(
-        "Category",
-        sorted(df_q["Category"].unique()),
-        key=f"vcat_{i}"
-    )
-    capacity = col3.number_input(
-        f"{selected_month} Capacity",
-        min_value=0,
-        value=0,
-        key=f"vcap_{i}"
-    )
-    allocation_pct = col4.number_input(
-        "Allocation %",
-        min_value=0,
-        max_value=100,
-        value=0,
-        key=f"valloc_{i}"
+    num_vendors = st.number_input(
+        "Number of Vendors",
+        min_value=1,
+        max_value=5,
+        value=1
     )
 
-    if name:
-        vendor_data.append({
-            "Vendor": name,
-            "Category": category,
-            "Capacity": capacity,
-            "Allocation %": allocation_pct
+    vendor_data = []
+
+    for i in range(num_vendors):
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        name = col1.text_input("Vendor Name", key=f"vname_{i}")
+        category = col2.selectbox(
+            "Category",
+            sorted(df_q["Category"].unique()),
+            key=f"vcat_{i}"
+        )
+        capacity = col3.number_input(
+            f"{selected_month} Capacity",
+            min_value=0,
+            value=0,
+            key=f"vcap_{i}"
+        )
+        allocation_pct = col4.number_input(
+            "Allocation %",
+            min_value=0,
+            max_value=100,
+            value=0,
+            key=f"valloc_{i}"
+        )
+
+        if name:
+            vendor_data.append({
+                "Vendor": name,
+                "Category": category,
+                "Capacity": capacity,
+                "Allocation %": allocation_pct
+            })
+
+    vendor_df = pd.DataFrame(vendor_data)
+
+    st.markdown("----")
+    st.subheader("Capacity vs Allocated Plan")
+
+    results = []
+
+    for _, row in vendor_df.iterrows():
+
+        category_plan = df_q[
+            df_q["Category"] == row["Category"]
+        ][selected_month].sum()
+
+        allocated_plan = (category_plan * row["Allocation %"]) / 100
+
+        capacity = row["Capacity"]
+
+        utilization = (allocated_plan / capacity) * 100 if capacity > 0 else 0
+        gap = capacity - allocated_plan
+
+        if utilization > 100:
+            status = "🔴 Overloaded"
+        elif utilization >= 85:
+            status = "🟡 Tight"
+        else:
+            status = "🟢 Comfortable"
+
+        results.append({
+            "Vendor": row["Vendor"],
+            "Category": row["Category"],
+            f"{selected_month} Category Plan": int(category_plan),
+            "Allocated Plan": int(allocated_plan),
+            "Capacity": int(capacity),
+            "Utilization %": round(utilization, 1),
+            "Gap": int(gap),
+            "Status": status
         })
 
-vendor_df = pd.DataFrame(vendor_data)
+    result_df = pd.DataFrame(results)
 
-st.markdown("----")
+    st.dataframe(result_df, use_container_width=True)
 
-st.subheader("Capacity vs Allocated Plan")
-
-results = []
-
-for _, row in vendor_df.iterrows():
-
-    category_plan = df_q[
-        df_q["Category"] == row["Category"]
-    ][selected_month].sum()
-
-    # Split plan based on allocation %
-    allocated_plan = (category_plan * row["Allocation %"]) / 100
-
-    capacity = row["Capacity"]
-
-    utilization = (allocated_plan / capacity) * 100 if capacity > 0 else 0
-    gap = capacity - allocated_plan
-
-    if utilization > 100:
-        status = "🔴 Overloaded"
-    elif utilization >= 85:
-        status = "🟡 Tight"
-    else:
-        status = "🟢 Comfortable"
-
-    results.append({
-        "Vendor": row["Vendor"],
-        "Category": row["Category"],
-        f"{selected_month} Category Plan": int(category_plan),
-        "Allocated Plan": int(allocated_plan),
-        "Capacity": int(capacity),
-        "Utilization %": round(utilization, 1),
-        "Gap": int(gap),
-        "Status": status
-    })
-
-result_df = pd.DataFrame(results)
-
-st.dataframe(result_df, use_container_width=True)
+else:
+    st.info("Upload Excel file to start.")
