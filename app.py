@@ -228,23 +228,87 @@ st.markdown("----")
 # Capacity vs Plan Comparison
 # -----------------------------
 
-st.subheader("Capacity vs Production Plan")
+# =========================================================
+# 🏭 Advanced Vendor Capacity Planning
+# =========================================================
+
+st.markdown("----")
+st.header("🏭 Vendor Capacity Planning")
+
+# ----------------------------------
+# Step 1: Vendor Setup
+# ----------------------------------
+
+st.subheader("Vendor Setup")
+
+vendor_names = st.text_area(
+    "Enter Vendor Names (one per line)",
+    "Vendor A\nVendor B"
+).split("\n")
+
+vendor_names = [v.strip() for v in vendor_names if v.strip() != ""]
+
+vendor_capacity_dict = {}
+
+for vendor in vendor_names:
+    vendor_capacity_dict[vendor] = st.number_input(
+        f"{vendor} - {selected_quarter} Capacity",
+        min_value=0,
+        value=0,
+        key=f"cap_{vendor}"
+    )
+
+st.markdown("----")
+
+# ----------------------------------
+# Step 2: SKU Assignment to Vendors
+# ----------------------------------
+
+st.subheader("SKU to Vendor Assignment")
+
+assignment_data = []
+
+for idx, row in df_q.iterrows():
+
+    col1, col2, col3 = st.columns([2,2,2])
+
+    col1.write(row["Model"])
+    col2.write(int(row[selected_quarter]))
+
+    assigned_vendor = col3.selectbox(
+        f"Assign Vendor for {row['Model']}",
+        vendor_names,
+        key=f"assign_{idx}"
+    )
+
+    assignment_data.append({
+        "Model": row["Model"],
+        "Vendor": assigned_vendor,
+        "Plan": row[selected_quarter]
+    })
+
+assignment_df = pd.DataFrame(assignment_data)
+
+st.markdown("----")
+
+# ----------------------------------
+# Step 3: Vendor Load Calculation
+# ----------------------------------
+
+st.subheader("Vendor Load & Utilization")
 
 capacity_results = []
 
-for _, row in vendor_df.iterrows():
+for vendor in vendor_names:
 
-    category_plan = (
-        df_q[df_q["Category"] == row["Category"]][selected_quarter].sum()
-    )
+    vendor_plan = assignment_df[
+        assignment_df["Vendor"] == vendor
+    ]["Plan"].sum()
 
-    capacity = row["Capacity"]
-    gap = capacity - category_plan
+    capacity = vendor_capacity_dict[vendor]
 
-    if capacity > 0:
-        utilization = (category_plan / capacity) * 100
-    else:
-        utilization = 0
+    utilization = (vendor_plan / capacity) * 100 if capacity > 0 else 0
+    gap = capacity - vendor_plan
 
     if utilization > 100:
         status = "🔴 Overloaded"
@@ -254,9 +318,8 @@ for _, row in vendor_df.iterrows():
         status = "🟢 Comfortable"
 
     capacity_results.append({
-        "Vendor": row["Vendor"],
-        "Category": row["Category"],
-        "Plan": int(category_plan),
+        "Vendor": vendor,
+        "Assigned Plan": int(vendor_plan),
         "Capacity": int(capacity),
         "Utilization %": round(utilization, 1),
         "Gap": int(gap),
@@ -266,5 +329,3 @@ for _, row in vendor_df.iterrows():
 capacity_df = pd.DataFrame(capacity_results)
 
 st.dataframe(capacity_df, use_container_width=True)
-
-
