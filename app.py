@@ -231,81 +231,112 @@ st.markdown("----")
 # =========================================================
 # 🏭 Advanced Vendor Capacity Planning
 # =========================================================
+# =========================================================
+# 🏭 Compact Vendor Capacity Planning
+# =========================================================
 
 st.markdown("----")
 st.header("🏭 Vendor Capacity Planning")
 
-# ----------------------------------
-# Step 1: Vendor Setup
-# ----------------------------------
+# -----------------------------
+# Vendor Setup
+# -----------------------------
 
-st.subheader("Vendor Setup")
+st.subheader("Add Vendors")
 
-vendor_names = st.text_area(
-    "Enter Vendor Names (one per line)",
-    "Vendor A\nVendor B"
-).split("\n")
+num_vendors = st.number_input(
+    "Number of Vendors",
+    min_value=1,
+    max_value=5,
+    value=1
+)
 
-vendor_names = [v.strip() for v in vendor_names if v.strip() != ""]
+vendor_master = []
 
-vendor_capacity_dict = {}
+for i in range(num_vendors):
 
-for vendor in vendor_names:
-    vendor_capacity_dict[vendor] = st.number_input(
-        f"{vendor} - {selected_quarter} Capacity",
+    col1, col2, col3 = st.columns(3)
+
+    name = col1.text_input(f"Vendor Name", key=f"name_{i}")
+
+    category = col2.selectbox(
+        "Category",
+        sorted(df_q["Category"].unique()),
+        key=f"cat_{i}"
+    )
+
+    capacity = col3.number_input(
+        f"{selected_quarter} Capacity",
         min_value=0,
         value=0,
-        key=f"cap_{vendor}"
+        key=f"cap_{i}"
     )
+
+    if name:
+        vendor_master.append({
+            "Vendor": name,
+            "Category": category,
+            "Capacity": capacity
+        })
+
+vendor_df = pd.DataFrame(vendor_master)
 
 st.markdown("----")
 
-# ----------------------------------
-# Step 2: SKU Assignment to Vendors
-# ----------------------------------
+# -----------------------------
+# SKU Assignment (Category Based)
+# -----------------------------
 
-st.subheader("SKU to Vendor Assignment")
+st.subheader("Assign SKUs to Vendors")
 
 assignment_data = []
 
-for idx, row in df_q.iterrows():
+for _, vendor_row in vendor_df.iterrows():
 
-    col1, col2, col3 = st.columns([2,2,2])
+    vendor = vendor_row["Vendor"]
+    category = vendor_row["Category"]
 
-    col1.write(row["Model"])
-    col2.write(int(row[selected_quarter]))
+    st.markdown(f"### {vendor} ({category})")
 
-    assigned_vendor = col3.selectbox(
-        f"Assign Vendor for {row['Model']}",
-        vendor_names,
-        key=f"assign_{idx}"
+    # Filter SKUs only of vendor category
+    sku_options = df_q[df_q["Category"] == category]["Model"].tolist()
+
+    assigned_skus = st.multiselect(
+        f"Select SKUs for {vendor}",
+        sku_options,
+        key=f"assign_{vendor}"
     )
 
-    assignment_data.append({
-        "Model": row["Model"],
-        "Vendor": assigned_vendor,
-        "Plan": row[selected_quarter]
-    })
+    for sku in assigned_skus:
+        plan_value = df_q[df_q["Model"] == sku][selected_quarter].values[0]
+
+        assignment_data.append({
+            "Vendor": vendor,
+            "Category": category,
+            "Model": sku,
+            "Plan": plan_value
+        })
 
 assignment_df = pd.DataFrame(assignment_data)
 
 st.markdown("----")
 
-# ----------------------------------
-# Step 3: Vendor Load Calculation
-# ----------------------------------
+# -----------------------------
+# Vendor Utilization Summary
+# -----------------------------
 
-st.subheader("Vendor Load & Utilization")
+st.subheader("Vendor Utilization")
 
-capacity_results = []
+results = []
 
-for vendor in vendor_names:
+for _, vendor_row in vendor_df.iterrows():
+
+    vendor = vendor_row["Vendor"]
+    capacity = vendor_row["Capacity"]
 
     vendor_plan = assignment_df[
         assignment_df["Vendor"] == vendor
     ]["Plan"].sum()
-
-    capacity = vendor_capacity_dict[vendor]
 
     utilization = (vendor_plan / capacity) * 100 if capacity > 0 else 0
     gap = capacity - vendor_plan
@@ -317,8 +348,9 @@ for vendor in vendor_names:
     else:
         status = "🟢 Comfortable"
 
-    capacity_results.append({
+    results.append({
         "Vendor": vendor,
+        "Category": vendor_row["Category"],
         "Assigned Plan": int(vendor_plan),
         "Capacity": int(capacity),
         "Utilization %": round(utilization, 1),
@@ -326,6 +358,8 @@ for vendor in vendor_names:
         "Status": status
     })
 
-capacity_df = pd.DataFrame(capacity_results)
+result_df = pd.DataFrame(results)
 
-st.dataframe(capacity_df, use_container_width=True)
+st.dataframe(result_df, use_container_width=True)
+
+
