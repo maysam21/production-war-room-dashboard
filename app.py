@@ -16,6 +16,13 @@ if uploaded_file is not None:
     df_raw = pd.read_excel(uploaded_file, sheet_name="S&OP", header=None)
 
     quarter_names = ["OND", "JFM", "AMJ", "JAS"]
+    month_map = {
+        "OND": ["Oct", "Nov", "Dec"],
+        "JFM": ["Jan", "Feb", "Mar"],
+        "AMJ": ["April", "May", "June"],
+        "JAS": ["Jul", "Aug", "Sep"]
+    }
+
     quarter_data = {}
 
     i = 0
@@ -34,9 +41,8 @@ if uploaded_file is not None:
 
                 while j < len(df_raw):
 
-                    row_check = str(df_raw.iloc[j][1]).strip().upper()
-
-                    if row_check == "TOTAL":
+                    # Stop at TOTAL row
+                    if str(df_raw.iloc[j][1]).strip().upper() == "TOTAL":
                         break
 
                     data_rows.append(df_raw.iloc[j].tolist())
@@ -44,11 +50,14 @@ if uploaded_file is not None:
 
                 df_q = pd.DataFrame(data_rows, columns=header)
 
-                # Remove empty rows
-                df_q = df_q.dropna(how="all")
+                # Keep only required columns
+                required_cols = ["Model", "Category", q] + month_map[q]
 
-                # Remove duplicate columns
-                df_q = df_q.loc[:, ~df_q.columns.duplicated()]
+                df_q = df_q[required_cols]
+
+                # Convert numeric columns safely
+                for col in [q] + month_map[q]:
+                    df_q[col] = pd.to_numeric(df_q[col], errors="coerce").fillna(0)
 
                 quarter_data[q] = df_q
                 i = j
@@ -65,27 +74,9 @@ if uploaded_file is not None:
         list(quarter_data.keys())
     )
 
-    df_q = quarter_data[selected_quarter].copy()
+    df_q = quarter_data[selected_quarter]
 
-    # Clean column names
-    df_q.columns = [str(c).strip() for c in df_q.columns]
-
-    # Identify months correctly
-    month_map = {
-        "OND": ["Oct", "Nov", "Dec"],
-        "JFM": ["Jan", "Feb", "Mar"],
-        "AMJ": ["April", "May", "June"],
-        "JAS": ["Jul", "Aug", "Sep"]
-    }
-
-    months = month_map.get(selected_quarter, [])
-
-    # Convert only relevant numeric columns safely
-    numeric_cols = [selected_quarter] + months
-
-    for col in numeric_cols:
-        if col in df_q.columns:
-            df_q[col] = pd.to_numeric(df_q[col], errors="coerce").fillna(0)
+    months = month_map[selected_quarter]
 
     # -------------------------
     # Quarter Summary
@@ -111,11 +102,7 @@ if uploaded_file is not None:
     # Month-wise Plan
     # -------------------------
 
-    month_totals = {}
-
-    for m in months:
-        if m in df_q.columns:
-            month_totals[m] = df_q[m].sum()
+    month_totals = {m: df_q[m].sum() for m in months}
 
     fig = go.Figure()
     fig.add_bar(
