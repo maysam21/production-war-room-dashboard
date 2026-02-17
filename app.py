@@ -145,30 +145,148 @@ if uploaded_file is not None:
         use_container_width=True
     )
 
-  # =========================================================
-# 🏭 Vendor Capacity Planning (Improved UI + Allocation %)
+# =========================================================
+# 🏗 Separate Windows (Tabs)
 # =========================================================
 
-st.markdown("----")
-st.header("🏭 Vendor Capacity Planning")
+tab1, tab2 = st.tabs(["📊 Production Plan", "🏭 Capacity Planning"])
 
-selected_month = st.selectbox("Select Month", months)
+# =========================================================
+# TAB 1 - Production Plan
+# =========================================================
+with tab1:
 
-st.markdown("### 🧩 Vendor Setup")
+    st.header(f"{selected_quarter} Production Plan")
 
-num_vendors = st.number_input(
-    "Number of Vendors",
-    min_value=1,
-    max_value=5,
-    value=1
-)
+    total_quarter = df_q[selected_quarter].sum()
+    st.metric("Total Quarter Plan", int(total_quarter))
 
-vendor_data = []
-assignment_data = []
+    month_totals = {m: df_q[m].sum() for m in months}
 
-for i in range(num_vendors):
+    fig = go.Figure()
+    fig.add_bar(x=list(month_totals.keys()),
+                y=list(month_totals.values()))
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.dataframe(df_q, use_container_width=True)
+
+
+# =========================================================
+# TAB 2 - Capacity Planning (Correct Allocation Logic)
+# =========================================================
+with tab2:
+
+    st.header("🏭 SKU-wise Capacity Planning")
+
+    selected_month = st.selectbox("Select Month", months)
+
+    st.markdown("### Vendor Setup")
+
+    vendor_names = st.text_area(
+        "Enter Vendor Names (one per line)",
+        "Vendor A\nVendor B"
+    ).split("\n")
+
+    vendor_names = [v.strip() for v in vendor_names if v.strip()]
+
+    vendor_capacity = {}
+
+    for v in vendor_names:
+        vendor_capacity[v] = st.number_input(
+            f"{v} Capacity ({selected_month})",
+            min_value=0,
+            value=0,
+            key=f"cap_{v}"
+        )
 
     st.markdown("----")
+    st.markdown("### SKU Allocation (%)")
+
+    allocation_records = []
+
+    for _, row in df_q.iterrows():
+
+        sku = row["Model"]
+        sku_plan = row[selected_month]
+
+        if sku_plan == 0:
+            continue
+
+        st.markdown(f"**{sku} (Plan: {int(sku_plan)})**")
+
+        cols = st.columns(len(vendor_names))
+
+        total_alloc_pct = 0
+
+        for idx, v in enumerate(vendor_names):
+
+            alloc_pct = cols[idx].number_input(
+                f"{v} %",
+                min_value=0,
+                max_value=100,
+                value=0,
+                key=f"{sku}_{v}"
+            )
+
+            total_alloc_pct += alloc_pct
+
+            allocation_records.append({
+                "SKU": sku,
+                "Vendor": v,
+                "Plan": sku_plan,
+                "Allocation %": alloc_pct
+            })
+
+        if total_alloc_pct != 100:
+            st.warning(f"⚠ Allocation for {sku} not equal to 100%")
+
+        st.markdown("----")
+
+    allocation_df = pd.DataFrame(allocation_records)
+
+    # =========================================================
+    # Vendor Load Calculation (Correct Split)
+    # =========================================================
+    st.subheader("Vendor Utilization Summary")
+
+    vendor_results = []
+
+    for v in vendor_names:
+
+        vendor_sku_df = allocation_df[
+            allocation_df["Vendor"] == v
+        ]
+
+        allocated_plan = (
+            vendor_sku_df["Plan"] *
+            vendor_sku_df["Allocation %"] / 100
+        ).sum()
+
+        capacity = vendor_capacity[v]
+
+        utilization = (allocated_plan / capacity) * 100 if capacity > 0 else 0
+        gap = capacity - allocated_plan
+
+        if utilization > 100:
+            status = "🔴 Overloaded"
+        elif utilization >= 85:
+            status = "🟡 Tight"
+        else:
+            status = "🟢 Comfortable"
+
+        vendor_results.append({
+            "Vendor": v,
+            "Allocated Plan": int(allocated_plan),
+            "Capacity": int(capacity),
+            "Utilization %": round(utilization, 1),
+            "Gap": int(gap),
+            "Status": status
+        })
+
+    vendor_result_df = pd.DataFrame(vendor_results)
+
+    st.dataframe(vendor_result_df, use_container_width=True)
 
     col1, col2, col3, col4 = st.columns([2,2,2,2])
 
@@ -272,3 +390,4 @@ for _, row in vendor_df.iterrows():
 result_df = pd.DataFrame(results)
 
 st.dataframe(result_df, use_container_width=True)
+
