@@ -146,98 +146,111 @@ if uploaded_file is not None:
         use_container_width=True
     )
 
-    # =========================================================
-    # 🔹 Vendor Capacity Planning (Month-wise + Allocation)
-    # =========================================================
-    st.markdown("----")
-    st.header("🏭 Vendor Capacity Planning (Month-wise)")
+   # =========================================================
+# 🏭 Vendor Capacity Planning (Month-wise + SKU Mapping)
+# =========================================================
 
-    selected_month = st.selectbox("Select Month", months)
+st.markdown("----")
+st.header("🏭 Vendor Capacity Planning (Month-wise)")
 
-    st.subheader("Add Vendors")
+selected_month = st.selectbox("Select Month", months)
 
-    num_vendors = st.number_input(
-        "Number of Vendors",
-        min_value=1,
-        max_value=5,
-        value=1
+st.subheader("Add Vendors")
+
+num_vendors = st.number_input(
+    "Number of Vendors",
+    min_value=1,
+    max_value=5,
+    value=1
+)
+
+vendor_data = []
+assignment_data = []
+
+for i in range(num_vendors):
+
+    col1, col2, col3 = st.columns(3)
+
+    name = col1.text_input("Vendor Name", key=f"vname_{i}")
+    category = col2.selectbox(
+        "Category",
+        sorted(df_q["Category"].unique()),
+        key=f"vcat_{i}"
+    )
+    capacity = col3.number_input(
+        f"{selected_month} Capacity",
+        min_value=0,
+        value=0,
+        key=f"vcap_{i}"
     )
 
-    vendor_data = []
+    if name:
 
-    for i in range(num_vendors):
-
-        col1, col2, col3, col4 = st.columns(4)
-
-        name = col1.text_input("Vendor Name", key=f"vname_{i}")
-        category = col2.selectbox(
-            "Category",
-            sorted(df_q["Category"].unique()),
-            key=f"vcat_{i}"
-        )
-        capacity = col3.number_input(
-            f"{selected_month} Capacity",
-            min_value=0,
-            value=0,
-            key=f"vcap_{i}"
-        )
-        allocation_pct = col4.number_input(
-            "Allocation %",
-            min_value=0,
-            max_value=100,
-            value=0,
-            key=f"valloc_{i}"
-        )
-
-        if name:
-            vendor_data.append({
-                "Vendor": name,
-                "Category": category,
-                "Capacity": capacity,
-                "Allocation %": allocation_pct
-            })
-
-    vendor_df = pd.DataFrame(vendor_data)
-
-    st.markdown("----")
-    st.subheader("Capacity vs Allocated Plan")
-
-    results = []
-
-    for _, row in vendor_df.iterrows():
-
-        category_plan = df_q[
-            df_q["Category"] == row["Category"]
-        ][selected_month].sum()
-
-        allocated_plan = (category_plan * row["Allocation %"]) / 100
-
-        capacity = row["Capacity"]
-
-        utilization = (allocated_plan / capacity) * 100 if capacity > 0 else 0
-        gap = capacity - allocated_plan
-
-        if utilization > 100:
-            status = "🔴 Overloaded"
-        elif utilization >= 85:
-            status = "🟡 Tight"
-        else:
-            status = "🟢 Comfortable"
-
-        results.append({
-            "Vendor": row["Vendor"],
-            "Category": row["Category"],
-            f"{selected_month} Category Plan": int(category_plan),
-            "Allocated Plan": int(allocated_plan),
-            "Capacity": int(capacity),
-            "Utilization %": round(utilization, 1),
-            "Gap": int(gap),
-            "Status": status
+        vendor_data.append({
+            "Vendor": name,
+            "Category": category,
+            "Capacity": capacity
         })
 
-    result_df = pd.DataFrame(results)
+        # Compact SKU Mapping
+        with st.expander(f"Map SKUs for {name} ({category})"):
 
-    st.dataframe(result_df, use_container_width=True)
+            sku_list = df_q[df_q["Category"] == category]["Model"].tolist()
 
-else:
-    st.info("Upload Excel file to start.")
+            selected_skus = st.multiselect(
+                "Select SKUs",
+                sku_list,
+                key=f"sku_map_{i}"
+            )
+
+            for sku in selected_skus:
+
+                plan_value = df_q[
+                    df_q["Model"] == sku
+                ][selected_month].values[0]
+
+                assignment_data.append({
+                    "Vendor": name,
+                    "Model": sku,
+                    "Plan": plan_value
+                })
+
+vendor_df = pd.DataFrame(vendor_data)
+assignment_df = pd.DataFrame(assignment_data)
+
+st.markdown("----")
+st.subheader("Vendor Utilization Summary")
+
+results = []
+
+for _, row in vendor_df.iterrows():
+
+    vendor = row["Vendor"]
+    capacity = row["Capacity"]
+
+    vendor_plan = assignment_df[
+        assignment_df["Vendor"] == vendor
+    ]["Plan"].sum()
+
+    utilization = (vendor_plan / capacity) * 100 if capacity > 0 else 0
+    gap = capacity - vendor_plan
+
+    if utilization > 100:
+        status = "🔴 Overloaded"
+    elif utilization >= 85:
+        status = "🟡 Tight"
+    else:
+        status = "🟢 Comfortable"
+
+    results.append({
+        "Vendor": vendor,
+        "Assigned Plan": int(vendor_plan),
+        "Capacity": int(capacity),
+        "Utilization %": round(utilization, 1),
+        "Gap": int(gap),
+        "Status": status
+    })
+
+result_df = pd.DataFrame(results)
+
+st.dataframe(result_df, use_container_width=True)
