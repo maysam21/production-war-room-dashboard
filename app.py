@@ -13,7 +13,6 @@ uploaded_file = st.sidebar.file_uploader(
 
 if uploaded_file is not None:
 
-    # Read raw sheet (no header)
     df_raw = pd.read_excel(uploaded_file, sheet_name="S&OP", header=None)
 
     quarter_names = ["OND", "JFM", "AMJ", "JAS"]
@@ -22,47 +21,43 @@ if uploaded_file is not None:
     i = 0
     while i < len(df_raw):
 
-        row = df_raw.iloc[i].astype(str).tolist()
+        row_values = df_raw.iloc[i].astype(str).tolist()
 
-        # Detect header row containing quarter name
         for q in quarter_names:
-            if q in row:
+            if q in row_values:
 
-                # This is header row
-                header_row = df_raw.iloc[i]
-                columns = header_row.tolist()
+                header = df_raw.iloc[i].tolist()
+                header = [str(h).strip() for h in header]
 
-                # Data starts from next row
-                data_start = i + 1
                 data_rows = []
+                j = i + 1
 
-                j = data_start
                 while j < len(df_raw):
 
-                    current_row = df_raw.iloc[j]
+                    row_check = str(df_raw.iloc[j][1]).strip().upper()
 
-                    # Stop at TOTAL row
-                    if str(current_row[1]).strip().upper() == "TOTAL":
+                    if row_check == "TOTAL":
                         break
 
-                    data_rows.append(current_row.tolist())
+                    data_rows.append(df_raw.iloc[j].tolist())
                     j += 1
 
-                # Create DataFrame for this quarter
-                df_q = pd.DataFrame(data_rows, columns=columns)
+                df_q = pd.DataFrame(data_rows, columns=header)
 
-                # Remove completely empty rows
+                # Remove empty rows
                 df_q = df_q.dropna(how="all")
 
-                quarter_data[q] = df_q
+                # Remove duplicate columns
+                df_q = df_q.loc[:, ~df_q.columns.duplicated()]
 
-                i = j  # Move pointer
+                quarter_data[q] = df_q
+                i = j
                 break
 
         i += 1
 
     if not quarter_data:
-        st.error("Quarter blocks not detected.")
+        st.error("Quarter blocks not detected properly.")
         st.stop()
 
     selected_quarter = st.sidebar.selectbox(
@@ -72,11 +67,10 @@ if uploaded_file is not None:
 
     df_q = quarter_data[selected_quarter].copy()
 
-    # Clean numeric columns
-    for col in df_q.columns:
-        df_q[col] = pd.to_numeric(df_q[col], errors="ignore")
+    # Clean column names
+    df_q.columns = [str(c).strip() for c in df_q.columns]
 
-    # Identify month columns dynamically
+    # Identify months correctly
     month_map = {
         "OND": ["Oct", "Nov", "Dec"],
         "JFM": ["Jan", "Feb", "Mar"],
@@ -84,11 +78,18 @@ if uploaded_file is not None:
         "JAS": ["Jul", "Aug", "Sep"]
     }
 
-    months = month_map[selected_quarter]
+    months = month_map.get(selected_quarter, [])
 
-    # ---------------------
+    # Convert only relevant numeric columns safely
+    numeric_cols = [selected_quarter] + months
+
+    for col in numeric_cols:
+        if col in df_q.columns:
+            df_q[col] = pd.to_numeric(df_q[col], errors="coerce").fillna(0)
+
+    # -------------------------
     # Quarter Summary
-    # ---------------------
+    # -------------------------
 
     total_quarter = df_q[selected_quarter].sum()
 
@@ -106,11 +107,12 @@ if uploaded_file is not None:
 
     st.divider()
 
-    # ---------------------
+    # -------------------------
     # Month-wise Plan
-    # ---------------------
+    # -------------------------
 
     month_totals = {}
+
     for m in months:
         if m in df_q.columns:
             month_totals[m] = df_q[m].sum()
@@ -127,9 +129,9 @@ if uploaded_file is not None:
 
     st.divider()
 
-    # ---------------------
+    # -------------------------
     # SKU-wise Plan
-    # ---------------------
+    # -------------------------
 
     st.subheader("📦 SKU-wise Production Plan")
 
