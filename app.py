@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="S&OP Dashboard", layout="wide")
+st.set_page_config(page_title="Quarter Production Plan", layout="wide")
 
-st.title("📊 S&OP Executive Dashboard")
+st.title("🏭 Quarterly Production Plan Dashboard")
 
 uploaded_file = st.sidebar.file_uploader(
     "Upload Production Plan Excel",
@@ -15,69 +15,105 @@ if uploaded_file is not None:
 
     df = pd.read_excel(uploaded_file, sheet_name="S&OP")
 
-    # Keep only relevant columns
-    df = df[["Model", "Category", "OND", "Oct", "Nov", "Dec"]]
+    # Remove completely empty rows
+    df = df.dropna(how="all")
 
-    month = st.sidebar.selectbox(
-        "Select Month",
-        ["Oct", "Nov", "Dec"]
+    # Detect quarter column dynamically
+    quarter_list = ["OND", "JFM", "AMJ", "JAS"]
+    detected_quarter = None
+
+    for q in quarter_list:
+        if q in df.columns:
+            detected_quarter = q
+
+    # Since quarters are stacked vertically,
+    # detect which rows belong to which quarter
+    quarter_sections = {}
+    current_quarter = None
+
+    for index, row in df.iterrows():
+        for q in quarter_list:
+            if q in row.values:
+                current_quarter = q
+                quarter_sections[current_quarter] = []
+        if current_quarter:
+            quarter_sections[current_quarter].append(row)
+
+    # Convert sections to dataframe
+    clean_data = {}
+    for q, rows in quarter_sections.items():
+        temp_df = pd.DataFrame(rows)
+        temp_df = temp_df.dropna(how="all")
+        clean_data[q] = temp_df
+
+    if not clean_data:
+        st.error("Quarter structure not detected correctly.")
+        st.stop()
+
+    selected_quarter = st.sidebar.selectbox(
+        "Select Quarter",
+        list(clean_data.keys())
     )
 
-    # Filter active models
-    df_month = df[df[month] > 0]
+    df_q = clean_data[selected_quarter]
 
-    total_plan = df_month[month].sum()
+    # Identify month mapping
+    month_map = {
+        "OND": ["Oct", "Nov", "Dec"],
+        "JFM": ["Jan", "Feb", "Mar"],
+        "AMJ": ["Apr", "May", "Jun"],
+        "JAS": ["Jul", "Aug", "Sep"]
+    }
 
-    chimney_plan = df_month[df_month["Category"] == "Chimney"][month].sum()
-    hob_plan = df_month[df_month["Category"] == "Hob"][month].sum()
-    cooktop_plan = df_month[df_month["Category"] == "Cooktop"][month].sum()
+    months = month_map[selected_quarter]
 
-    model_count = df_month["Model"].nunique()
+    # Keep relevant columns only
+    df_q = df_q[["Model", "Category", selected_quarter] + months]
 
-    # KPI Row
-    col1, col2, col3, col4, col5 = st.columns(5)
+    df_q = df_q.fillna(0)
 
-    col1.metric("Total Plan", int(total_plan))
-    col2.metric("Chimney", int(chimney_plan))
-    col3.metric("Hob", int(hob_plan))
-    col4.metric("Cooktop", int(cooktop_plan))
-    col5.metric("Active Models", model_count)
+    # ---------------------
+    # Quarter Summary
+    # ---------------------
+
+    total_quarter = df_q[selected_quarter].sum()
+
+    category_summary = df_q.groupby("Category")[selected_quarter].sum().reset_index()
+
+    st.subheader(f"📊 {selected_quarter} Quarter Summary")
+
+    col1, col2 = st.columns(2)
+    col1.metric("Total Quarter Plan", int(total_quarter))
+    col2.dataframe(category_summary)
 
     st.divider()
 
-    # Category Chart
-    category_summary = df_month.groupby("Category")[month].sum().reset_index()
+    # ---------------------
+    # Month-wise Plan
+    # ---------------------
+
+    month_totals = {m: df_q[m].sum() for m in months}
 
     fig = go.Figure()
-    fig.add_bar(x=category_summary["Category"],
-                y=category_summary[month])
+    fig.add_bar(x=list(month_totals.keys()),
+                y=list(month_totals.values()))
 
-    fig.update_layout(title=f"{month} Category-wise Plan")
+    fig.update_layout(title=f"{selected_quarter} Month-wise Production Plan")
 
     st.plotly_chart(fig, use_container_width=True)
 
     st.divider()
 
-    # Model-wise Table
-    st.subheader(f"{month} Model-wise Plan")
+    # ---------------------
+    # SKU-wise Plan
+    # ---------------------
 
-    st.dataframe(df_month[["Model", "Category", month]].sort_values(by=month, ascending=False))
+    st.subheader("📦 SKU-wise Production Plan")
 
-    st.divider()
-
-    # Quarter OND View
-    if st.checkbox("Show OND Quarter View"):
-
-        total_ond = df["OND"].sum()
-
-        fig_q = go.Figure()
-        fig_q.add_bar(x=df["Model"],
-                      y=df["OND"])
-
-        fig_q.update_layout(title="OND Quarter Plan (Model-wise)")
-
-        st.metric("Total OND Plan", int(total_ond))
-        st.plotly_chart(fig_q, use_container_width=True)
+    st.dataframe(
+        df_q.sort_values(by=selected_quarter, ascending=False),
+        use_container_width=True
+    )
 
 else:
-    st.info("Upload Excel file to start S&OP Dashboard.")
+    st.info("Upload Excel file to generate Quarterly Production Plan.")
