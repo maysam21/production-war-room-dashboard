@@ -27,7 +27,7 @@ if uploaded_file is not None:
     quarter_data = {}
 
     # -----------------------------
-    # Proper Quarter Block Detection
+    # Robust Quarter Block Parser
     # -----------------------------
     for i in range(len(df_raw)):
 
@@ -35,7 +35,9 @@ if uploaded_file is not None:
 
         for q in quarter_names:
 
+            # Detect real header row
             if (
+                "Sl. No" in row and
                 "Model" in row and
                 "Category" in row and
                 q in row
@@ -49,30 +51,39 @@ if uploaded_file is not None:
 
                 while j < len(df_raw):
 
-                    # Stop at TOTAL row
-                    if str(df_raw.iloc[j][1]).strip().upper() == "TOTAL":
+                    sl_value = df_raw.iloc[j][0]
+
+                    # Stop when Sl. No not numeric
+                    if pd.isna(sl_value):
                         break
 
-                    # Skip empty rows
-                    if df_raw.iloc[j].isna().all():
-                        j += 1
-                        continue
+                    try:
+                        int(sl_value)
+                    except:
+                        break
 
                     data_rows.append(df_raw.iloc[j].tolist())
                     j += 1
 
                 df_q = pd.DataFrame(data_rows, columns=header)
 
+                # Remove Sl. No column safely
+                if "Sl. No" in df_q.columns:
+                    df_q = df_q.drop(columns=["Sl. No"])
+
+                # Clean column names
+                df_q.columns = df_q.columns.str.strip()
+
                 # Keep only required columns
                 required_cols = ["Model", "Category", q] + month_map[q]
                 df_q = df_q[required_cols]
 
+                # Clean Category values (remove extra spaces)
+                df_q["Category"] = df_q["Category"].astype(str).str.strip()
+
                 # Convert numeric columns safely
                 for col in [q] + month_map[q]:
                     df_q[col] = pd.to_numeric(df_q[col], errors="coerce").fillna(0)
-
-                # Remove rows where Model is NaN
-                df_q = df_q[df_q["Model"].notna()]
 
                 quarter_data[q] = df_q
 
@@ -81,7 +92,7 @@ if uploaded_file is not None:
         st.stop()
 
     # -----------------------------
-    # Sidebar Selections
+    # Sidebar Filters
     # -----------------------------
 
     selected_quarter = st.sidebar.selectbox(
@@ -91,12 +102,13 @@ if uploaded_file is not None:
 
     df_q = quarter_data[selected_quarter].copy()
 
-    # Category filter
-    categories = ["All"] + sorted(df_q["Category"].unique().tolist())
+    # Clean category list
+    category_list = sorted(df_q["Category"].dropna().unique().tolist())
+    category_options = ["All"] + category_list
 
     selected_category = st.sidebar.selectbox(
         "Select Category",
-        categories
+        category_options
     )
 
     if selected_category != "All":
@@ -122,7 +134,7 @@ if uploaded_file is not None:
         .reset_index()
     )
 
-    col2.dataframe(category_summary)
+    col2.dataframe(category_summary, use_container_width=True)
 
     st.divider()
 
@@ -149,7 +161,7 @@ if uploaded_file is not None:
     st.divider()
 
     # -----------------------------
-    # SKU-wise Plan Table
+    # SKU-wise Table
     # -----------------------------
 
     st.subheader("📦 SKU-wise Production Plan")
