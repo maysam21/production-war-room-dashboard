@@ -2,40 +2,41 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="Quarter Production Plan", layout="wide")
+st.set_page_config(page_title="Production Planning Dashboard", layout="wide")
 
-st.title("🏭 Quarterly Production Plan Dashboard")
+st.title("🏭 Production Planning Dashboard")
 
 uploaded_file = st.sidebar.file_uploader(
     "Upload Production Plan Excel",
     type=["xlsx"]
 )
 
+# -----------------------------
+# Global Month Map (FIXED)
+# -----------------------------
+month_map = {
+    "OND": ["Oct", "Nov", "Dec"],
+    "JFM": ["Jan", "Feb", "Mar"],
+    "AMJ": ["April", "May", "June"],
+    "JAS": ["Jul", "Aug", "Sep"]
+}
+
 if uploaded_file is not None:
 
     df_raw = pd.read_excel(uploaded_file, sheet_name="S&OP", header=None)
 
     quarter_names = ["OND", "JFM", "AMJ", "JAS"]
-
-    month_map = {
-        "OND": ["Oct", "Nov", "Dec"],
-        "JFM": ["Jan", "Feb", "Mar"],
-        "AMJ": ["April", "May", "June"],
-        "JAS": ["Jul", "Aug", "Sep"]
-    }
-
     quarter_data = {}
 
-    # -----------------------------
-    # Robust Quarter Block Parser
-    # -----------------------------
+    # =========================================================
+    # 🔹 Robust Quarter Block Parser
+    # =========================================================
     for i in range(len(df_raw)):
 
         row = df_raw.iloc[i].astype(str).str.strip().tolist()
 
         for q in quarter_names:
 
-            # Detect real header row
             if (
                 "Sl. No" in row and
                 "Model" in row and
@@ -53,7 +54,6 @@ if uploaded_file is not None:
 
                     sl_value = df_raw.iloc[j][0]
 
-                    # Stop when Sl. No not numeric
                     if pd.isna(sl_value):
                         break
 
@@ -67,21 +67,16 @@ if uploaded_file is not None:
 
                 df_q = pd.DataFrame(data_rows, columns=header)
 
-                # Remove Sl. No column safely
                 if "Sl. No" in df_q.columns:
                     df_q = df_q.drop(columns=["Sl. No"])
 
-                # Clean column names
                 df_q.columns = df_q.columns.str.strip()
 
-                # Keep only required columns
                 required_cols = ["Model", "Category", q] + month_map[q]
                 df_q = df_q[required_cols]
 
-                # Clean Category values (remove extra spaces)
                 df_q["Category"] = df_q["Category"].astype(str).str.strip()
 
-                # Convert numeric columns safely
                 for col in [q] + month_map[q]:
                     df_q[col] = pd.to_numeric(df_q[col], errors="coerce").fillna(0)
 
@@ -91,9 +86,9 @@ if uploaded_file is not None:
         st.error("Quarter blocks not detected properly.")
         st.stop()
 
-    # -----------------------------
-    # Sidebar Filters
-    # -----------------------------
+    # =========================================================
+    # 🔹 Quarter Selection
+    # =========================================================
 
     selected_quarter = st.sidebar.selectbox(
         "Select Quarter",
@@ -102,27 +97,17 @@ if uploaded_file is not None:
 
     df_q = quarter_data[selected_quarter].copy()
 
-    # Clean category list
-    category_list = sorted(df_q["Category"].dropna().unique().tolist())
-    category_options = ["All"] + category_list
+    months = month_map.get(selected_quarter, [])
+    if not months:
+        st.stop()
 
-    selected_category = st.sidebar.selectbox(
-        "Select Category",
-        category_options
-    )
+    # =========================================================
+    # 🔹 Production Plan Section
+    # =========================================================
 
-    if selected_category != "All":
-        df_q = df_q[df_q["Category"] == selected_category]
-
-    months = month_map[selected_quarter]
-
-    # -----------------------------
-    # Quarter Summary
-    # -----------------------------
+    st.header(f"📊 {selected_quarter} Production Plan")
 
     total_quarter = df_q[selected_quarter].sum()
-
-    st.subheader(f"📊 {selected_quarter} Quarter Summary")
 
     col1, col2 = st.columns(2)
 
@@ -138,10 +123,7 @@ if uploaded_file is not None:
 
     st.divider()
 
-    # -----------------------------
-    # Month-wise Plan Chart
-    # -----------------------------
-
+    # Month-wise Chart
     month_totals = {m: df_q[m].sum() for m in months}
 
     fig = go.Figure()
@@ -160,115 +142,98 @@ if uploaded_file is not None:
 
     st.divider()
 
-    # -----------------------------
-    # SKU-wise Table
-    # -----------------------------
-
+    # SKU Table
     st.subheader("📦 SKU-wise Production Plan")
-
     st.dataframe(
         df_q.sort_values(by=selected_quarter, ascending=False),
         use_container_width=True
     )
 
-else:
-    st.info("Upload Excel file to generate Quarterly Production Plan.")
     # =========================================================
-# 🏭 Vendor Capacity Planning Section
-# =========================================================
-# =========================================================
-# 🏭 Simple Month-wise Vendor Capacity Planning
-# =========================================================
+    # 🔹 Simple Month-wise Vendor Capacity Planning
+    # =========================================================
 
-st.markdown("----")
-st.header("🏭 Vendor Capacity Planning (Month-wise)")
+    st.markdown("----")
+    st.header("🏭 Vendor Capacity Planning (Month-wise)")
 
-months = month_map[selected_quarter]
-
-selected_month = st.selectbox(
-    "Select Month",
-    months
-)
-
-# ----------------------------------
-# Vendor Input (Compact)
-# ----------------------------------
-
-st.subheader("Add Vendors")
-
-num_vendors = st.number_input(
-    "Number of Vendors",
-    min_value=1,
-    max_value=5,
-    value=1
-)
-
-vendor_data = []
-
-for i in range(num_vendors):
-
-    col1, col2, col3 = st.columns(3)
-
-    name = col1.text_input("Vendor Name", key=f"vname_{i}")
-    category = col2.selectbox(
-        "Category",
-        sorted(df_q["Category"].unique()),
-        key=f"vcat_{i}"
-    )
-    capacity = col3.number_input(
-        f"{selected_month} Capacity",
-        min_value=0,
-        value=0,
-        key=f"vcap_{i}"
+    selected_month = st.selectbox(
+        "Select Month",
+        months
     )
 
-    if name:
-        vendor_data.append({
-            "Vendor": name,
-            "Category": category,
-            "Capacity": capacity
+    st.subheader("Add Vendors")
+
+    num_vendors = st.number_input(
+        "Number of Vendors",
+        min_value=1,
+        max_value=5,
+        value=1
+    )
+
+    vendor_data = []
+
+    for i in range(num_vendors):
+
+        col1, col2, col3 = st.columns(3)
+
+        name = col1.text_input("Vendor Name", key=f"vname_{i}")
+        category = col2.selectbox(
+            "Category",
+            sorted(df_q["Category"].unique()),
+            key=f"vcat_{i}"
+        )
+        capacity = col3.number_input(
+            f"{selected_month} Capacity",
+            min_value=0,
+            value=0,
+            key=f"vcap_{i}"
+        )
+
+        if name:
+            vendor_data.append({
+                "Vendor": name,
+                "Category": category,
+                "Capacity": capacity
+            })
+
+    vendor_df = pd.DataFrame(vendor_data)
+
+    st.markdown("----")
+    st.subheader("Capacity vs Plan")
+
+    results = []
+
+    for _, row in vendor_df.iterrows():
+
+        category_plan = df_q[
+            df_q["Category"] == row["Category"]
+        ][selected_month].sum()
+
+        capacity = row["Capacity"]
+
+        utilization = (category_plan / capacity) * 100 if capacity > 0 else 0
+        gap = capacity - category_plan
+
+        if utilization > 100:
+            status = "🔴 Overloaded"
+        elif utilization >= 85:
+            status = "🟡 Tight"
+        else:
+            status = "🟢 Comfortable"
+
+        results.append({
+            "Vendor": row["Vendor"],
+            "Category": row["Category"],
+            f"{selected_month} Plan": int(category_plan),
+            "Capacity": int(capacity),
+            "Utilization %": round(utilization, 1),
+            "Gap": int(gap),
+            "Status": status
         })
 
-vendor_df = pd.DataFrame(vendor_data)
+    result_df = pd.DataFrame(results)
 
-st.markdown("----")
+    st.dataframe(result_df, use_container_width=True)
 
-# ----------------------------------
-# Capacity Calculation (Month-wise)
-# ----------------------------------
-
-st.subheader("Capacity vs Plan")
-
-results = []
-
-for _, row in vendor_df.iterrows():
-
-    category_plan = df_q[
-        df_q["Category"] == row["Category"]
-    ][selected_month].sum()
-
-    capacity = row["Capacity"]
-
-    utilization = (category_plan / capacity) * 100 if capacity > 0 else 0
-    gap = capacity - category_plan
-
-    if utilization > 100:
-        status = "🔴 Overloaded"
-    elif utilization >= 85:
-        status = "🟡 Tight"
-    else:
-        status = "🟢 Comfortable"
-
-    results.append({
-        "Vendor": row["Vendor"],
-        "Category": row["Category"],
-        f"{selected_month} Plan": int(category_plan),
-        "Capacity": int(capacity),
-        "Utilization %": round(utilization, 1),
-        "Gap": int(gap),
-        "Status": status
-    })
-
-result_df = pd.DataFrame(results)
-
-st.dataframe(result_df, use_container_width=True)
+else:
+    st.info("Upload Excel file to start.")
