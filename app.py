@@ -177,15 +177,22 @@ else:
 # 🏭 Vendor Capacity Planning Section
 # =========================================================
 # =========================================================
-# 🏭 Compact Vendor Capacity Planning
+# 🏭 Simple Month-wise Vendor Capacity Planning
 # =========================================================
 
 st.markdown("----")
-st.header("🏭 Vendor Capacity Planning")
+st.header("🏭 Vendor Capacity Planning (Month-wise)")
 
-# -----------------------------
-# Vendor Setup
-# -----------------------------
+months = month_map[selected_quarter]
+
+selected_month = st.selectbox(
+    "Select Month",
+    months
+)
+
+# ----------------------------------
+# Vendor Input (Compact)
+# ----------------------------------
 
 st.subheader("Add Vendors")
 
@@ -196,95 +203,54 @@ num_vendors = st.number_input(
     value=1
 )
 
-vendor_master = []
+vendor_data = []
 
 for i in range(num_vendors):
 
     col1, col2, col3 = st.columns(3)
 
-    name = col1.text_input(f"Vendor Name", key=f"name_{i}")
-
+    name = col1.text_input("Vendor Name", key=f"vname_{i}")
     category = col2.selectbox(
         "Category",
         sorted(df_q["Category"].unique()),
-        key=f"cat_{i}"
+        key=f"vcat_{i}"
     )
-
     capacity = col3.number_input(
-        f"{selected_quarter} Capacity",
+        f"{selected_month} Capacity",
         min_value=0,
         value=0,
-        key=f"cap_{i}"
+        key=f"vcap_{i}"
     )
 
     if name:
-        vendor_master.append({
+        vendor_data.append({
             "Vendor": name,
             "Category": category,
             "Capacity": capacity
         })
 
-vendor_df = pd.DataFrame(vendor_master)
+vendor_df = pd.DataFrame(vendor_data)
 
 st.markdown("----")
 
-# -----------------------------
-# SKU Assignment (Category Based)
-# -----------------------------
+# ----------------------------------
+# Capacity Calculation (Month-wise)
+# ----------------------------------
 
-st.subheader("Assign SKUs to Vendors")
-
-assignment_data = []
-
-for _, vendor_row in vendor_df.iterrows():
-
-    vendor = vendor_row["Vendor"]
-    category = vendor_row["Category"]
-
-    st.markdown(f"### {vendor} ({category})")
-
-    # Filter SKUs only of vendor category
-    sku_options = df_q[df_q["Category"] == category]["Model"].tolist()
-
-    assigned_skus = st.multiselect(
-        f"Select SKUs for {vendor}",
-        sku_options,
-        key=f"assign_{vendor}"
-    )
-
-    for sku in assigned_skus:
-        plan_value = df_q[df_q["Model"] == sku][selected_quarter].values[0]
-
-        assignment_data.append({
-            "Vendor": vendor,
-            "Category": category,
-            "Model": sku,
-            "Plan": plan_value
-        })
-
-assignment_df = pd.DataFrame(assignment_data)
-
-st.markdown("----")
-
-# -----------------------------
-# Vendor Utilization Summary
-# -----------------------------
-
-st.subheader("Vendor Utilization")
+st.subheader("Capacity vs Plan")
 
 results = []
 
-for _, vendor_row in vendor_df.iterrows():
+for _, row in vendor_df.iterrows():
 
-    vendor = vendor_row["Vendor"]
-    capacity = vendor_row["Capacity"]
+    category_plan = df_q[
+        df_q["Category"] == row["Category"]
+    ][selected_month].sum()
 
-    vendor_plan = assignment_df[
-        assignment_df["Vendor"] == vendor
-    ]["Plan"].sum()
+    capacity = row["Capacity"]
 
-    utilization = (vendor_plan / capacity) * 100 if capacity > 0 else 0
-    gap = capacity - vendor_plan
+    utilization = (category_plan / capacity) * 100 if capacity > 0 else 0
+    gap = capacity - category_plan
 
     if utilization > 100:
         status = "🔴 Overloaded"
@@ -294,9 +260,9 @@ for _, vendor_row in vendor_df.iterrows():
         status = "🟢 Comfortable"
 
     results.append({
-        "Vendor": vendor,
-        "Category": vendor_row["Category"],
-        "Assigned Plan": int(vendor_plan),
+        "Vendor": row["Vendor"],
+        "Category": row["Category"],
+        f"{selected_month} Plan": int(category_plan),
         "Capacity": int(capacity),
         "Utilization %": round(utilization, 1),
         "Gap": int(gap),
@@ -306,4 +272,3 @@ for _, vendor_row in vendor_df.iterrows():
 result_df = pd.DataFrame(results)
 
 st.dataframe(result_df, use_container_width=True)
-
