@@ -176,61 +176,6 @@ else:
     # =========================================================
 # 🏭 Vendor Capacity Planning Section
 # =========================================================
-
-st.markdown("----")
-st.header("🏭 Vendor Capacity Planning")
-
-# -----------------------------
-# Vendor Capacity Input
-# -----------------------------
-
-st.subheader("Vendor Capacity Input")
-
-vendor_data = []
-
-num_vendors = st.number_input(
-    "Number of Vendors",
-    min_value=1,
-    max_value=10,
-    value=1
-)
-
-for i in range(num_vendors):
-
-    st.markdown(f"### Vendor {i+1}")
-
-    col1, col2, col3 = st.columns(3)
-
-    vendor_name = col1.text_input(f"Vendor Name {i+1}", key=f"name_{i}")
-    vendor_category = col2.selectbox(
-        f"Category {i+1}",
-        sorted(df_q["Category"].unique()),
-        key=f"cat_{i}"
-    )
-    vendor_capacity = col3.number_input(
-        f"{selected_quarter} Capacity {i+1}",
-        min_value=0,
-        value=0,
-        key=f"cap_{i}"
-    )
-
-    vendor_data.append({
-        "Vendor": vendor_name,
-        "Category": vendor_category,
-        "Capacity": vendor_capacity
-    })
-
-vendor_df = pd.DataFrame(vendor_data)
-
-st.markdown("----")
-
-# -----------------------------
-# Capacity vs Plan Comparison
-# -----------------------------
-
-# =========================================================
-# 🏭 Advanced Vendor Capacity Planning
-# =========================================================
 # =========================================================
 # 🏭 Compact Vendor Capacity Planning
 # =========================================================
@@ -361,5 +306,4 @@ for _, vendor_row in vendor_df.iterrows():
 result_df = pd.DataFrame(results)
 
 st.dataframe(result_df, use_container_width=True)
-
 
