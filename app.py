@@ -2,9 +2,9 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="Production Planning Dashboard", layout="wide")
+st.set_page_config(page_title="Production Control Tower", layout="wide")
 
-st.title("🏭 Production Planning Dashboard")
+st.title("🏭 Production Control Tower")
 
 uploaded_file = st.sidebar.file_uploader(
     "Upload Production Plan Excel",
@@ -12,7 +12,7 @@ uploaded_file = st.sidebar.file_uploader(
 )
 
 # =========================================================
-# 🔹 Global Month Map
+# Month Map
 # =========================================================
 month_map = {
     "OND": ["Oct", "Nov", "Dec"],
@@ -23,14 +23,14 @@ month_map = {
 
 if uploaded_file is not None:
 
+    # =========================================================
+    # READ S&OP SHEET
+    # =========================================================
     df_raw = pd.read_excel(uploaded_file, sheet_name="S&OP", header=None)
 
     quarter_names = ["OND", "JFM", "AMJ", "JAS"]
     quarter_data = {}
 
-    # =========================================================
-    # 🔹 Quarter Block Parser
-    # =========================================================
     for i in range(len(df_raw)):
 
         row = df_raw.iloc[i].astype(str).str.strip().tolist()
@@ -87,6 +87,16 @@ if uploaded_file is not None:
         st.stop()
 
     # =========================================================
+    # READ COGS SHEET
+    # =========================================================
+    try:
+        cogs_master = pd.read_excel(uploaded_file, sheet_name="COGS")
+        cogs_master.columns = cogs_master.columns.str.strip()
+    except:
+        st.warning("COGS sheet not found.")
+        cogs_master = pd.DataFrame()
+
+    # =========================================================
     # Quarter Selection
     # =========================================================
     selected_quarter = st.sidebar.selectbox(
@@ -95,65 +105,46 @@ if uploaded_file is not None:
     )
 
     df_q = quarter_data[selected_quarter].copy()
-    months = month_map.get(selected_quarter, [])
-
-    if not months:
-        st.stop()
+    months = month_map[selected_quarter]
 
     # =========================================================
     # Tabs
     # =========================================================
     tab1, tab2, tab3 = st.tabs(
-        ["📊 Production Plan", "🏭 Capacity Planning", "💰 COGS Monitoring"]
+        ["📊 Production Plan", "🏭 Capacity Planning", "💰 COGS & GM Analysis"]
     )
 
     # =========================================================
-    # TAB 1 - Production Plan
+    # TAB 1 - Production
     # =========================================================
     with tab1:
 
         st.header(f"{selected_quarter} Production Plan")
 
-        total_quarter = df_q[selected_quarter].sum()
-        st.metric("Total Quarter Plan", int(total_quarter))
+        total_plan = df_q[selected_quarter].sum()
+        st.metric("Total Quarter Plan", int(total_plan))
 
         month_totals = {m: df_q[m].sum() for m in months}
 
         fig = go.Figure()
-        fig.add_bar(
-            x=list(month_totals.keys()),
-            y=list(month_totals.values())
-        )
-
-        fig.update_layout(
-            xaxis_title="Month",
-            yaxis_title="Quantity"
-        )
-
+        fig.add_bar(x=list(month_totals.keys()),
+                    y=list(month_totals.values()))
         st.plotly_chart(fig, use_container_width=True)
 
-        st.subheader("SKU-wise Plan")
         st.dataframe(df_q, use_container_width=True)
 
     # =========================================================
-    # TAB 2 - Capacity Planning
+    # TAB 2 - Capacity (Simple Category Level)
     # =========================================================
     with tab2:
 
-        st.header("🏭 SKU-wise Capacity Planning")
+        st.header("🏭 Capacity Planning")
 
         selected_month = st.selectbox("Select Month", months)
 
-        st.markdown("### Vendor Setup")
+        num_vendors = st.number_input("Number of Vendors", 1, 5, 1)
 
-        num_vendors = st.number_input(
-            "Number of Vendors",
-            min_value=1,
-            max_value=5,
-            value=1
-        )
-
-        vendors = []
+        vendor_results = []
 
         for i in range(num_vendors):
 
@@ -165,158 +156,146 @@ if uploaded_file is not None:
                 sorted(df_q["Category"].unique()),
                 key=f"vcat_{i}"
             )
-            total_capacity = col3.number_input(
-                f"{selected_month} Total Capacity",
+            capacity = col3.number_input(
+                "Monthly Capacity",
                 min_value=0,
                 value=0,
-                key=f"vtotalcap_{i}"
+                key=f"vcap_{i}"
             )
 
             if name:
-                vendors.append({
+
+                category_plan = df_q[
+                    df_q["Category"] == category
+                ][selected_month].sum()
+
+                utilization = (
+                    category_plan / capacity * 100
+                    if capacity > 0 else 0
+                )
+
+                gap = capacity - category_plan
+
+                vendor_results.append({
                     "Vendor": name,
                     "Category": category,
-                    "Total Capacity": total_capacity
+                    "Plan": int(category_plan),
+                    "Capacity": int(capacity),
+                    "Utilization %": round(utilization, 1),
+                    "Gap": int(gap)
                 })
 
-        st.markdown("----")
-        st.subheader("Vendor Utilization Summary")
-
-        vendor_results = []
-
-        for vendor in vendors:
-
-            vendor_name = vendor["Vendor"]
-            vendor_total_capacity = vendor["Total Capacity"]
-
-            category_plan = df_q[
-                df_q["Category"] == vendor["Category"]
-            ][selected_month].sum()
-
-            utilization = (
-                category_plan / vendor_total_capacity * 100
-                if vendor_total_capacity > 0 else 0
-            )
-
-            gap = vendor_total_capacity - category_plan
-
-            if utilization > 100:
-                status = "🔴 Overloaded"
-            elif utilization >= 85:
-                status = "🟡 Tight"
-            else:
-                status = "🟢 Comfortable"
-
-            vendor_results.append({
-                "Vendor": vendor_name,
-                "Category": vendor["Category"],
-                "Plan": int(category_plan),
-                "Total Capacity": int(vendor_total_capacity),
-                "Utilization %": round(utilization, 1),
-                "Gap": int(gap),
-                "Status": status
-            })
-
-        vendor_result_df = pd.DataFrame(vendor_results)
-        st.dataframe(vendor_result_df, use_container_width=True)
+        if vendor_results:
+            st.dataframe(pd.DataFrame(vendor_results),
+                         use_container_width=True)
 
     # =========================================================
-    # TAB 3 - COGS Monitoring
+    # TAB 3 - COGS & GM%
     # =========================================================
     with tab3:
 
-        st.header("💰 COGS Monitoring")
+        st.header("💰 COGS & Gross Margin Analysis")
+
+        if cogs_master.empty:
+            st.warning("COGS sheet missing.")
+            st.stop()
 
         selected_month = st.selectbox(
-            "Select Month for COGS",
+            "Select Month for Financial Analysis",
             months,
-            key="cogs_month"
+            key="finance_month"
         )
 
-        st.markdown("### Enter Cost Details Per SKU")
-
-        cogs_records = []
-
-        for _, row in df_q.iterrows():
-
-            sku = row["Model"]
-            plan_qty = row[selected_month]
-
-            if plan_qty == 0:
-                continue
-
-            col1, col2, col3 = st.columns([2,1,1])
-
-            col1.write(f"**{sku}** (Plan: {int(plan_qty)})")
-
-            material_cost = col2.number_input(
-                "Material Cost / Unit",
-                min_value=0.0,
-                value=0.0,
-                key=f"mat_{sku}"
-            )
-
-            conversion_cost = col3.number_input(
-                "Conversion Cost / Unit",
-                min_value=0.0,
-                value=0.0,
-                key=f"conv_{sku}"
-            )
-
-            total_unit_cost = material_cost + conversion_cost
-            total_cogs_value = total_unit_cost * plan_qty
-
-            cogs_records.append({
-                "SKU": sku,
-                "Category": row["Category"],
-                "Plan Qty": plan_qty,
-                "Total Unit Cost": total_unit_cost,
-                "Total COGS": total_cogs_value
-            })
-
-        cogs_df = pd.DataFrame(cogs_records)
-
-        st.markdown("----")
-        st.subheader("COGS Summary")
-
-        total_plan_qty = cogs_df["Plan Qty"].sum()
-        total_cogs = cogs_df["Total COGS"].sum()
-
-        avg_cogs_per_unit = (
-            total_cogs / total_plan_qty
-            if total_plan_qty > 0 else 0
+        # Merge production with COGS
+        merged = df_q.merge(
+            cogs_master,
+            how="left",
+            on="Model"
         )
 
-        col1, col2, col3 = st.columns(3)
+        merged = merged.fillna(0)
 
-        col1.metric("Total Plan Qty", int(total_plan_qty))
+        merged["Plan Qty"] = merged[selected_month]
+        merged["Total Unit Cost"] = (
+            merged["Material Cost"] +
+            merged["Conversion Cost"]
+        )
+        merged["Total COGS"] = (
+            merged["Plan Qty"] *
+            merged["Total Unit Cost"]
+        )
+        merged["Revenue"] = (
+            merged["Plan Qty"] *
+            merged["Selling Price"]
+        )
+        merged["Gross Profit"] = (
+            merged["Revenue"] -
+            merged["Total COGS"]
+        )
+        merged["GM %"] = (
+            merged["Gross Profit"] /
+            merged["Revenue"] * 100
+        ).replace([float("inf"), -float("inf")], 0).fillna(0)
+
+        finance_df = merged[
+            ["Model", "Category", "Plan Qty",
+             "Total Unit Cost", "Total COGS",
+             "Revenue", "Gross Profit", "GM %"]
+        ]
+
+        st.subheader("SKU Financial Summary")
+        st.dataframe(finance_df, use_container_width=True)
+
+        # =====================================================
+        # SUMMARY METRICS
+        # =====================================================
+        total_revenue = finance_df["Revenue"].sum()
+        total_cogs = finance_df["Total COGS"].sum()
+        total_gp = finance_df["Gross Profit"].sum()
+
+        overall_gm = (
+            total_gp / total_revenue * 100
+            if total_revenue > 0 else 0
+        )
+
+        col1, col2, col3, col4 = st.columns(4)
+
+        col1.metric("Total Revenue", f"{total_revenue:,.0f}")
         col2.metric("Total COGS", f"{total_cogs:,.0f}")
-        col3.metric("Avg COGS / Unit", f"{avg_cogs_per_unit:,.2f}")
+        col3.metric("Gross Profit", f"{total_gp:,.0f}")
+        col4.metric("Overall GM %", f"{overall_gm:.2f}%")
 
-        st.subheader("Category Cost Breakdown")
+        # =====================================================
+        # CATEGORY PROFITABILITY
+        # =====================================================
+        st.subheader("Category Profitability")
 
         category_summary = (
-            cogs_df.groupby("Category")
+            finance_df.groupby("Category")
             .agg({
-                "Plan Qty": "sum",
-                "Total COGS": "sum"
+                "Revenue": "sum",
+                "Total COGS": "sum",
+                "Gross Profit": "sum"
             })
             .reset_index()
         )
+
+        category_summary["GM %"] = (
+            category_summary["Gross Profit"] /
+            category_summary["Revenue"] * 100
+        ).replace([float("inf"), -float("inf")], 0).fillna(0)
 
         st.dataframe(category_summary, use_container_width=True)
 
         fig = go.Figure()
         fig.add_bar(
             x=category_summary["Category"],
-            y=category_summary["Total COGS"]
+            y=category_summary["GM %"]
         )
-
         fig.update_layout(
-            xaxis_title="Category",
-            yaxis_title="Total COGS"
+            title="Category GM %",
+            yaxis_title="GM %"
         )
-
         st.plotly_chart(fig, use_container_width=True)
 
 else:
