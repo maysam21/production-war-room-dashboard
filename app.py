@@ -87,7 +87,7 @@ if uploaded_file is not None:
         st.stop()
 
     # =========================================================
-    # 🔹 Quarter Selection
+    # Quarter Selection
     # =========================================================
     selected_quarter = st.sidebar.selectbox(
         "Select Quarter",
@@ -101,9 +101,11 @@ if uploaded_file is not None:
         st.stop()
 
     # =========================================================
-    # 🔹 Separate Tabs
+    # Tabs
     # =========================================================
-    tab1, tab2 = st.tabs(["📊 Production Plan", "🏭 Capacity Planning","💰 COGS Monitoring"])
+    tab1, tab2, tab3 = st.tabs(
+        ["📊 Production Plan", "🏭 Capacity Planning", "💰 COGS Monitoring"]
+    )
 
     # =========================================================
     # TAB 1 - Production Plan
@@ -134,7 +136,7 @@ if uploaded_file is not None:
         st.dataframe(df_q, use_container_width=True)
 
     # =========================================================
-    # TAB 2 - Clean SKU-wise Capacity Planning
+    # TAB 2 - Capacity Planning
     # =========================================================
     with tab2:
 
@@ -142,9 +144,6 @@ if uploaded_file is not None:
 
         selected_month = st.selectbox("Select Month", months)
 
-        # ----------------------------
-        # Vendor Setup
-        # ----------------------------
         st.markdown("### Vendor Setup")
 
         num_vendors = st.number_input(
@@ -180,50 +179,7 @@ if uploaded_file is not None:
                     "Total Capacity": total_capacity
                 })
 
-        # ----------------------------
-        # SKU Capacity Mapping
-        # ----------------------------
         st.markdown("----")
-        st.markdown("### SKU Capacity Mapping")
-
-        sku_allocation_records = []
-
-        for vendor in vendors:
-
-            st.markdown(f"#### {vendor['Vendor']} ({vendor['Category']})")
-
-            sku_list = df_q[
-                df_q["Category"] == vendor["Category"]
-            ]["Model"].tolist()
-
-            selected_skus = st.multiselect(
-                "Select SKUs",
-                sku_list,
-                key=f"sku_select_{vendor['Vendor']}"
-            )
-
-            for sku in selected_skus:
-
-                sku_capacity = st.number_input(
-                    f"{sku} Capacity for {vendor['Vendor']}",
-                    min_value=0,
-                    value=0,
-                    key=f"{vendor['Vendor']}_{sku}"
-                )
-
-                sku_allocation_records.append({
-                    "Vendor": vendor["Vendor"],
-                    "SKU": sku,
-                    "SKU Capacity": sku_capacity
-                })
-
-            st.markdown("----")
-
-        allocation_df = pd.DataFrame(sku_allocation_records)
-
-        # ----------------------------
-        # Allocation Engine
-        # ----------------------------
         st.subheader("Vendor Utilization Summary")
 
         vendor_results = []
@@ -233,31 +189,16 @@ if uploaded_file is not None:
             vendor_name = vendor["Vendor"]
             vendor_total_capacity = vendor["Total Capacity"]
 
-            vendor_sku_df = allocation_df[
-                allocation_df["Vendor"] == vendor_name
-            ]
-
-            vendor_allocated_total = 0
-
-            for _, sku_row in vendor_sku_df.iterrows():
-
-                sku = sku_row["SKU"]
-                sku_capacity_limit = sku_row["SKU Capacity"]
-
-                sku_plan = df_q[
-                    df_q["Model"] == sku
-                ][selected_month].values[0]
-
-                allocated = min(sku_plan, sku_capacity_limit)
-
-                vendor_allocated_total += allocated
+            category_plan = df_q[
+                df_q["Category"] == vendor["Category"]
+            ][selected_month].sum()
 
             utilization = (
-                vendor_allocated_total / vendor_total_capacity * 100
+                category_plan / vendor_total_capacity * 100
                 if vendor_total_capacity > 0 else 0
             )
 
-            gap = vendor_total_capacity - vendor_allocated_total
+            gap = vendor_total_capacity - category_plan
 
             if utilization > 100:
                 status = "🔴 Overloaded"
@@ -268,7 +209,8 @@ if uploaded_file is not None:
 
             vendor_results.append({
                 "Vendor": vendor_name,
-                "Allocated Plan": int(vendor_allocated_total),
+                "Category": vendor["Category"],
+                "Plan": int(category_plan),
                 "Total Capacity": int(vendor_total_capacity),
                 "Utilization %": round(utilization, 1),
                 "Gap": int(gap),
@@ -276,115 +218,106 @@ if uploaded_file is not None:
             })
 
         vendor_result_df = pd.DataFrame(vendor_results)
-
         st.dataframe(vendor_result_df, use_container_width=True)
-        # =========================================================
-# TAB 3 - COGS Monitoring
-# =========================================================
-with tab3:
 
-    st.header("💰 COGS Monitoring")
+    # =========================================================
+    # TAB 3 - COGS Monitoring
+    # =========================================================
+    with tab3:
 
-    selected_month = st.selectbox(
-        "Select Month for COGS",
-        months,
-        key="cogs_month"
-    )
+        st.header("💰 COGS Monitoring")
 
-    st.markdown("### Enter Cost Details Per SKU")
-
-    cogs_records = []
-
-    for _, row in df_q.iterrows():
-
-        sku = row["Model"]
-        plan_qty = row[selected_month]
-
-        if plan_qty == 0:
-            continue
-
-        col1, col2, col3 = st.columns([2,1,1])
-
-        col1.write(f"**{sku}** (Plan: {int(plan_qty)})")
-
-        material_cost = col2.number_input(
-            "Material Cost / Unit",
-            min_value=0.0,
-            value=0.0,
-            key=f"mat_{sku}"
+        selected_month = st.selectbox(
+            "Select Month for COGS",
+            months,
+            key="cogs_month"
         )
 
-        conversion_cost = col3.number_input(
-            "Conversion Cost / Unit",
-            min_value=0.0,
-            value=0.0,
-            key=f"conv_{sku}"
+        st.markdown("### Enter Cost Details Per SKU")
+
+        cogs_records = []
+
+        for _, row in df_q.iterrows():
+
+            sku = row["Model"]
+            plan_qty = row[selected_month]
+
+            if plan_qty == 0:
+                continue
+
+            col1, col2, col3 = st.columns([2,1,1])
+
+            col1.write(f"**{sku}** (Plan: {int(plan_qty)})")
+
+            material_cost = col2.number_input(
+                "Material Cost / Unit",
+                min_value=0.0,
+                value=0.0,
+                key=f"mat_{sku}"
+            )
+
+            conversion_cost = col3.number_input(
+                "Conversion Cost / Unit",
+                min_value=0.0,
+                value=0.0,
+                key=f"conv_{sku}"
+            )
+
+            total_unit_cost = material_cost + conversion_cost
+            total_cogs_value = total_unit_cost * plan_qty
+
+            cogs_records.append({
+                "SKU": sku,
+                "Category": row["Category"],
+                "Plan Qty": plan_qty,
+                "Total Unit Cost": total_unit_cost,
+                "Total COGS": total_cogs_value
+            })
+
+        cogs_df = pd.DataFrame(cogs_records)
+
+        st.markdown("----")
+        st.subheader("COGS Summary")
+
+        total_plan_qty = cogs_df["Plan Qty"].sum()
+        total_cogs = cogs_df["Total COGS"].sum()
+
+        avg_cogs_per_unit = (
+            total_cogs / total_plan_qty
+            if total_plan_qty > 0 else 0
         )
 
-        total_unit_cost = material_cost + conversion_cost
-        total_cogs_value = total_unit_cost * plan_qty
+        col1, col2, col3 = st.columns(3)
 
-        cogs_records.append({
-            "SKU": sku,
-            "Category": row["Category"],
-            "Plan Qty": plan_qty,
-            "Material Cost": material_cost,
-            "Conversion Cost": conversion_cost,
-            "Total Unit Cost": total_unit_cost,
-            "Total COGS": total_cogs_value
-        })
+        col1.metric("Total Plan Qty", int(total_plan_qty))
+        col2.metric("Total COGS", f"{total_cogs:,.0f}")
+        col3.metric("Avg COGS / Unit", f"{avg_cogs_per_unit:,.2f}")
 
-    cogs_df = pd.DataFrame(cogs_records)
+        st.subheader("Category Cost Breakdown")
 
-    st.markdown("----")
-    st.subheader("📊 COGS Summary")
+        category_summary = (
+            cogs_df.groupby("Category")
+            .agg({
+                "Plan Qty": "sum",
+                "Total COGS": "sum"
+            })
+            .reset_index()
+        )
 
-    total_plan_qty = cogs_df["Plan Qty"].sum()
-    total_cogs = cogs_df["Total COGS"].sum()
+        st.dataframe(category_summary, use_container_width=True)
 
-    avg_cogs_per_unit = (
-        total_cogs / total_plan_qty
-        if total_plan_qty > 0 else 0
-    )
+        fig = go.Figure()
+        fig.add_bar(
+            x=category_summary["Category"],
+            y=category_summary["Total COGS"]
+        )
 
-    col1, col2, col3 = st.columns(3)
+        fig.update_layout(
+            xaxis_title="Category",
+            yaxis_title="Total COGS"
+        )
 
-    col1.metric("Total Plan Qty", int(total_plan_qty))
-    col2.metric("Total COGS", f"{total_cogs:,.0f}")
-    col3.metric("Avg COGS / Unit", f"{avg_cogs_per_unit:,.2f}")
-
-    st.markdown("----")
-
-    # Category Cost Summary
-    st.subheader("Category Cost Breakdown")
-
-    category_summary = (
-        cogs_df.groupby("Category")
-        .agg({
-            "Plan Qty": "sum",
-            "Total COGS": "sum"
-        })
-        .reset_index()
-    )
-
-    st.dataframe(category_summary, use_container_width=True)
-
-    # Cost Distribution Chart
-    fig = go.Figure()
-    fig.add_bar(
-        x=category_summary["Category"],
-        y=category_summary["Total COGS"]
-    )
-
-    fig.update_layout(
-        title="Category-wise COGS Distribution",
-        xaxis_title="Category",
-        yaxis_title="Total COGS"
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
+        st.plotly_chart(fig, use_container_width=True)
 
 else:
     st.info("Upload Excel file to start.")
-
