@@ -21,17 +21,6 @@ month_map = {
     "JAS": ["Jul", "Aug", "Sep"]
 }
 
-# =========================================================
-# Helper: Auto Detect Column
-# =========================================================
-def detect_column(columns, possible_names):
-    for col in columns:
-        for name in possible_names:
-            if name.lower() in col.lower():
-                return col
-    return None
-
-
 if uploaded_file is not None:
 
     # =========================================================
@@ -98,71 +87,31 @@ if uploaded_file is not None:
         st.stop()
 
     # =========================================================
-    # READ COGS SHEET ROBUSTLY
+    # READ COGS - Temp SHEET
     # =========================================================
     try:
-        cogs_master = pd.read_excel(uploaded_file, sheet_name="COGS")
+        cogs_master = pd.read_excel(uploaded_file, sheet_name="COGS - Temp")
         cogs_master.columns = cogs_master.columns.str.strip()
 
-        model_col = detect_column(
-            cogs_master.columns,
-            ["model", "sku"]
-        )
-
-        material_col = detect_column(
-            cogs_master.columns,
-            ["material"]
-        )
-
-        conversion_col = detect_column(
-            cogs_master.columns,
-            ["conversion"]
-        )
-
-        selling_col = detect_column(
-            cogs_master.columns,
-            ["selling", "price", "sp"]
-        )
-
-        if model_col is None:
-            st.error("Model column not found in COGS sheet.")
+        # Rename Product → Model for merge
+        if "Product" not in cogs_master.columns:
+            st.error("Column 'Product' not found in COGS - Temp sheet.")
             st.stop()
 
-        # Rename safely
-        cogs_master = cogs_master.rename(columns={
-            model_col: "Model"
-        })
+        cogs_master = cogs_master.rename(columns={"Product": "Model"})
 
-        if material_col:
-            cogs_master = cogs_master.rename(columns={
-                material_col: "Material Cost"
-            })
-        else:
-            cogs_master["Material Cost"] = 0
+        # Only take required columns
+        required_cols = ["Model", "Material Cost",
+                         "Conversion Cost", "Selling Price"]
 
-        if conversion_col:
-            cogs_master = cogs_master.rename(columns={
-                conversion_col: "Conversion Cost"
-            })
-        else:
-            cogs_master["Conversion Cost"] = 0
+        for col in required_cols:
+            if col not in cogs_master.columns:
+                cogs_master[col] = 0
 
-        if selling_col:
-            cogs_master = cogs_master.rename(columns={
-                selling_col: "Selling Price"
-            })
-        else:
-            cogs_master["Selling Price"] = 0
-
-        cogs_master = cogs_master[
-            ["Model", "Material Cost",
-             "Conversion Cost", "Selling Price"]
-        ]
-
-        cogs_master = cogs_master.fillna(0)
+        cogs_master = cogs_master[required_cols].fillna(0)
 
     except:
-        st.warning("COGS sheet not found.")
+        st.warning("COGS - Temp sheet not found.")
         cogs_master = pd.DataFrame()
 
     # =========================================================
@@ -203,18 +152,74 @@ if uploaded_file is not None:
         st.dataframe(df_q, use_container_width=True)
 
     # =========================================================
-    # TAB 3 - Financial Analysis
+    # TAB 2 - Capacity
+    # =========================================================
+    with tab2:
+
+        st.header("🏭 Capacity Planning")
+
+        selected_month = st.selectbox("Select Month", months)
+
+        num_vendors = st.number_input("Number of Vendors", 1, 5, 1)
+
+        vendor_results = []
+
+        for i in range(num_vendors):
+
+            col1, col2, col3 = st.columns(3)
+
+            name = col1.text_input("Vendor Name", key=f"vname_{i}")
+            category = col2.selectbox(
+                "Category",
+                sorted(df_q["Category"].unique()),
+                key=f"vcat_{i}"
+            )
+            capacity = col3.number_input(
+                "Monthly Capacity",
+                min_value=0,
+                value=0,
+                key=f"vcap_{i}"
+            )
+
+            if name:
+
+                category_plan = df_q[
+                    df_q["Category"] == category
+                ][selected_month].sum()
+
+                utilization = (
+                    category_plan / capacity * 100
+                    if capacity > 0 else 0
+                )
+
+                gap = capacity - category_plan
+
+                vendor_results.append({
+                    "Vendor": name,
+                    "Category": category,
+                    "Plan": int(category_plan),
+                    "Capacity": int(capacity),
+                    "Utilization %": round(utilization, 1),
+                    "Gap": int(gap)
+                })
+
+        if vendor_results:
+            st.dataframe(pd.DataFrame(vendor_results),
+                         use_container_width=True)
+
+    # =========================================================
+    # TAB 3 - COGS & GM%
     # =========================================================
     with tab3:
 
         st.header("💰 COGS & Gross Margin Analysis")
 
         if cogs_master.empty:
-            st.warning("COGS sheet missing.")
+            st.warning("COGS - Temp sheet missing.")
             st.stop()
 
         selected_month = st.selectbox(
-            "Select Month",
+            "Select Month for Financial Analysis",
             months,
             key="finance_month"
         )
@@ -261,7 +266,7 @@ if uploaded_file is not None:
         st.subheader("SKU Financial Summary")
         st.dataframe(finance_df, use_container_width=True)
 
-        # Summary
+        # ================= Summary =================
         total_revenue = finance_df["Revenue"].sum()
         total_cogs = finance_df["Total COGS"].sum()
         total_gp = finance_df["Gross Profit"].sum()
@@ -278,7 +283,7 @@ if uploaded_file is not None:
         col3.metric("Gross Profit", f"{total_gp:,.0f}")
         col4.metric("Overall GM %", f"{overall_gm:.2f}%")
 
-        # Category Level
+        # Category Summary
         st.subheader("Category Profitability")
 
         category_summary = (
