@@ -103,7 +103,7 @@ if uploaded_file is not None:
     # =========================================================
     # 🔹 Separate Tabs
     # =========================================================
-    tab1, tab2 = st.tabs(["📊 Production Plan", "🏭 Capacity Planning"])
+    tab1, tab2 = st.tabs(["📊 Production Plan", "🏭 Capacity Planning","💰 COGS Monitoring"])
 
     # =========================================================
     # TAB 1 - Production Plan
@@ -278,6 +278,113 @@ if uploaded_file is not None:
         vendor_result_df = pd.DataFrame(vendor_results)
 
         st.dataframe(vendor_result_df, use_container_width=True)
+        # =========================================================
+# TAB 3 - COGS Monitoring
+# =========================================================
+with tab3:
+
+    st.header("💰 COGS Monitoring")
+
+    selected_month = st.selectbox(
+        "Select Month for COGS",
+        months,
+        key="cogs_month"
+    )
+
+    st.markdown("### Enter Cost Details Per SKU")
+
+    cogs_records = []
+
+    for _, row in df_q.iterrows():
+
+        sku = row["Model"]
+        plan_qty = row[selected_month]
+
+        if plan_qty == 0:
+            continue
+
+        col1, col2, col3 = st.columns([2,1,1])
+
+        col1.write(f"**{sku}** (Plan: {int(plan_qty)})")
+
+        material_cost = col2.number_input(
+            "Material Cost / Unit",
+            min_value=0.0,
+            value=0.0,
+            key=f"mat_{sku}"
+        )
+
+        conversion_cost = col3.number_input(
+            "Conversion Cost / Unit",
+            min_value=0.0,
+            value=0.0,
+            key=f"conv_{sku}"
+        )
+
+        total_unit_cost = material_cost + conversion_cost
+        total_cogs_value = total_unit_cost * plan_qty
+
+        cogs_records.append({
+            "SKU": sku,
+            "Category": row["Category"],
+            "Plan Qty": plan_qty,
+            "Material Cost": material_cost,
+            "Conversion Cost": conversion_cost,
+            "Total Unit Cost": total_unit_cost,
+            "Total COGS": total_cogs_value
+        })
+
+    cogs_df = pd.DataFrame(cogs_records)
+
+    st.markdown("----")
+    st.subheader("📊 COGS Summary")
+
+    total_plan_qty = cogs_df["Plan Qty"].sum()
+    total_cogs = cogs_df["Total COGS"].sum()
+
+    avg_cogs_per_unit = (
+        total_cogs / total_plan_qty
+        if total_plan_qty > 0 else 0
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Total Plan Qty", int(total_plan_qty))
+    col2.metric("Total COGS", f"{total_cogs:,.0f}")
+    col3.metric("Avg COGS / Unit", f"{avg_cogs_per_unit:,.2f}")
+
+    st.markdown("----")
+
+    # Category Cost Summary
+    st.subheader("Category Cost Breakdown")
+
+    category_summary = (
+        cogs_df.groupby("Category")
+        .agg({
+            "Plan Qty": "sum",
+            "Total COGS": "sum"
+        })
+        .reset_index()
+    )
+
+    st.dataframe(category_summary, use_container_width=True)
+
+    # Cost Distribution Chart
+    fig = go.Figure()
+    fig.add_bar(
+        x=category_summary["Category"],
+        y=category_summary["Total COGS"]
+    )
+
+    fig.update_layout(
+        title="Category-wise COGS Distribution",
+        xaxis_title="Category",
+        yaxis_title="Total COGS"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
 
 else:
     st.info("Upload Excel file to start.")
+
