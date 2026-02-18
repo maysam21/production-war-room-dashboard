@@ -87,34 +87,6 @@ if uploaded_file is not None:
         st.stop()
 
     # =========================================================
-    # READ COGS - Temp SHEET
-    # =========================================================
-    try:
-        cogs_master = pd.read_excel(uploaded_file, sheet_name="COGS - Temp")
-        cogs_master.columns = cogs_master.columns.str.strip()
-
-        # Rename Product → Model for merge
-        if "Product" not in cogs_master.columns:
-            st.error("Column 'Product' not found in COGS - Temp sheet.")
-            st.stop()
-
-        cogs_master = cogs_master.rename(columns={"Product": "Model"})
-
-        # Only take required columns
-        required_cols = ["Model", "Material Cost",
-                         "Conversion Cost", "Selling Price"]
-
-        for col in required_cols:
-            if col not in cogs_master.columns:
-                cogs_master[col] = 0
-
-        cogs_master = cogs_master[required_cols].fillna(0)
-
-    except:
-        st.warning("COGS - Temp sheet not found.")
-        cogs_master = pd.DataFrame()
-
-    # =========================================================
     # Quarter Selection
     # =========================================================
     selected_quarter = st.sidebar.selectbox(
@@ -145,8 +117,10 @@ if uploaded_file is not None:
         month_totals = {m: df_q[m].sum() for m in months}
 
         fig = go.Figure()
-        fig.add_bar(x=list(month_totals.keys()),
-                    y=list(month_totals.values()))
+        fig.add_bar(
+            x=list(month_totals.keys()),
+            y=list(month_totals.values())
+        )
         st.plotly_chart(fig, use_container_width=True)
 
         st.dataframe(df_q, use_container_width=True)
@@ -208,112 +182,96 @@ if uploaded_file is not None:
                          use_container_width=True)
 
     # =========================================================
-# TAB 3 - COGS & GM% (Independent of Plan)
-# =========================================================
-with tab3:
+    # TAB 3 - COGS & GM (Independent)
+    # =========================================================
+    with tab3:
 
-    st.header("💰 COGS & Gross Margin Analysis")
+        st.header("💰 COGS & Gross Margin Analysis")
 
-    try:
-        cogs_raw = pd.read_excel(
-            uploaded_file,
-            sheet_name="COGS - Temp",
-            header=0
-        )
-
-        # Select required Excel columns by position
-        # B,C,L,M,N,O,P,Q,R,S  -> Index 1,2,11,12,13,14,15,16,17,18
-        required_indexes = [1,2,11,12,13,14,15,16,17,18]
-
-        cogs_df = cogs_raw.iloc[:, required_indexes].copy()
-
-        # Rename for clarity (adjust if needed)
-        cogs_df.columns = [
-            "Product",
-            "Category",
-            "Material Cost",
-            "Conversion Cost",
-            "Other Cost 1",
-            "Other Cost 2",
-            "Total Cost",
-            "Selling Price",
-            "Revenue",
-            "Gross Profit"
-        ]
-
-        cogs_df = cogs_df.fillna(0)
-
-        # If Revenue & GP not provided → calculate
-        if "Revenue" not in cogs_df.columns or cogs_df["Revenue"].sum() == 0:
-            cogs_df["Revenue"] = (
-                cogs_df["Selling Price"]
+        try:
+            cogs_raw = pd.read_excel(
+                uploaded_file,
+                sheet_name="COGS - Temp",
+                header=0
             )
 
-        if "Gross Profit" not in cogs_df.columns or cogs_df["Gross Profit"].sum() == 0:
-            cogs_df["Gross Profit"] = (
-                cogs_df["Selling Price"] -
-                cogs_df["Total Cost"]
+            # B,C,L,M,N,O,P,Q,R,S
+            required_indexes = [1,2,11,12,13,14,15,16,17,18]
+
+            cogs_df = cogs_raw.iloc[:, required_indexes].copy()
+
+            cogs_df.columns = [
+                "Product",
+                "Category",
+                "Material Cost",
+                "Conversion Cost",
+                "Other Cost 1",
+                "Other Cost 2",
+                "Total Cost",
+                "Selling Price",
+                "Revenue",
+                "Gross Profit"
+            ]
+
+            cogs_df = cogs_df.fillna(0)
+
+            # Calculate GM %
+            cogs_df["GM %"] = (
+                cogs_df["Gross Profit"] /
+                cogs_df["Revenue"] * 100
+            ).replace([float("inf"), -float("inf")], 0).fillna(0)
+
+            st.subheader("Product Level Financials")
+            st.dataframe(cogs_df, use_container_width=True)
+
+            # Summary
+            total_revenue = cogs_df["Revenue"].sum()
+            total_cost = cogs_df["Total Cost"].sum()
+            total_gp = cogs_df["Gross Profit"].sum()
+
+            overall_gm = (
+                total_gp / total_revenue * 100
+                if total_revenue > 0 else 0
             )
 
-        # GM %
-        cogs_df["GM %"] = (
-            cogs_df["Gross Profit"] /
-            cogs_df["Selling Price"] * 100
-        ).replace([float("inf"), -float("inf")], 0).fillna(0)
+            col1, col2, col3, col4 = st.columns(4)
 
-        st.subheader("Product Level Financials")
-        st.dataframe(cogs_df, use_container_width=True)
+            col1.metric("Total Revenue", f"{total_revenue:,.0f}")
+            col2.metric("Total Cost", f"{total_cost:,.0f}")
+            col3.metric("Gross Profit", f"{total_gp:,.0f}")
+            col4.metric("Overall GM %", f"{overall_gm:.2f}%")
 
-        # ================= Summary =================
-        total_revenue = cogs_df["Revenue"].sum()
-        total_cost = cogs_df["Total Cost"].sum()
-        total_gp = cogs_df["Gross Profit"].sum()
+            # Category Summary
+            st.subheader("Category Profitability")
 
-        overall_gm = (
-            total_gp / total_revenue * 100
-            if total_revenue > 0 else 0
-        )
+            category_summary = (
+                cogs_df.groupby("Category")
+                .agg({
+                    "Revenue": "sum",
+                    "Total Cost": "sum",
+                    "Gross Profit": "sum"
+                })
+                .reset_index()
+            )
 
-        col1, col2, col3, col4 = st.columns(4)
+            category_summary["GM %"] = (
+                category_summary["Gross Profit"] /
+                category_summary["Revenue"] * 100
+            ).replace([float("inf"), -float("inf")], 0).fillna(0)
 
-        col1.metric("Total Revenue", f"{total_revenue:,.0f}")
-        col2.metric("Total Cost", f"{total_cost:,.0f}")
-        col3.metric("Gross Profit", f"{total_gp:,.0f}")
-        col4.metric("Overall GM %", f"{overall_gm:.2f}%")
+            st.dataframe(category_summary, use_container_width=True)
 
-        # ================= Category Analysis =================
-        st.subheader("Category Profitability")
+            fig = go.Figure()
+            fig.add_bar(
+                x=category_summary["Category"],
+                y=category_summary["GM %"]
+            )
+            fig.update_layout(title="Category GM %")
+            st.plotly_chart(fig, use_container_width=True)
 
-        category_summary = (
-            cogs_df.groupby("Category")
-            .agg({
-                "Revenue": "sum",
-                "Total Cost": "sum",
-                "Gross Profit": "sum"
-            })
-            .reset_index()
-        )
-
-        category_summary["GM %"] = (
-            category_summary["Gross Profit"] /
-            category_summary["Revenue"] * 100
-        ).replace([float("inf"), -float("inf")], 0).fillna(0)
-
-        st.dataframe(category_summary, use_container_width=True)
-
-        # Chart
-        fig = go.Figure()
-        fig.add_bar(
-            x=category_summary["Category"],
-            y=category_summary["GM %"]
-        )
-        fig.update_layout(title="Category GM %")
-        st.plotly_chart(fig, use_container_width=True)
-
-    except Exception as e:
-        st.error("Error reading COGS - Temp sheet.")
-        st.write(e)
+        except Exception as e:
+            st.error("Error reading COGS - Temp sheet.")
+            st.write(e)
 
 else:
     st.info("Upload Excel file to start.")
-
